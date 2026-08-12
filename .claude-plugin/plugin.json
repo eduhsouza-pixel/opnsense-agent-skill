@@ -1,7 +1,7 @@
 {
   "name": "opnsense-agent-skill",
-  "description": "Agentic administration of OPNsense firewalls: REST API, configd and shell, with a validated index of every API endpoint.",
-  "version": "1.0.0",
+  "description": "Agentic administration of OPNsense firewalls: REST API, configd and shell, with a validated index of every API endpoint. Includes an MCP server and rule files for Cursor, Copilot, Windsurf and Cline.",
+  "version": "1.1.0",
   "author": {
     "name": "eduhsouza-pixel"
   },

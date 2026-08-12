@@ -1,0 +1,50 @@
+---
+description: Administering an OPNsense firewall via its REST API, configd or shell
+globs:
+alwaysApply: false
+---
+
+# OPNsense administration
+
+Skill files live in `skills/opnsense/`. Client:
+`python skills/opnsense/scripts/opnsense.py`.
+
+## Never guess an endpoint name
+
+2399 endpoints across 93 modules, and the names are not predictable. Port
+forwards are `firewall/d_nat` — `firewall/dnat` is a 404. Static routes use
+`addroute`, lowercase and unseparated. `firewall/filter/apply` works but is
+missing from the official reference, because that reference is generated per PHP
+class and the action is inherited.
+
+Look it up before calling anything:
+
+```bash
+python skills/opnsense/scripts/opnsense.py find port forward
+python skills/opnsense/scripts/opnsense.py show firewall/d_nat
+```
+
+`find` understands networking vocabulary, not just literal names.
+
+## Every change is two steps
+
+`add_*`/`set_*`/`del_*`/`toggle_*` return `{"result":"saved"}` and edit
+`config.xml` only. The change is live only after you POST the controller's
+`apply` or `reconfigure` endpoint — `show` names it for you.
+
+`{"result":"failed","validations":{...}}` means nothing was written, even on
+HTTP 200.
+
+## Safety
+
+There is no savepoint and no automatic rollback in the core API. Before touching
+filter rules on a remote firewall: back up with `opnsense.py backup`, and arm
+`echo "pfctl -d" | at now + 5 minutes` over SSH. Add the permissive rule and
+commit before removing the old one.
+
+Confirm with the user before anything affecting reachability — management-
+interface rules, addressing, gateways, routes, network-wide DNS, firmware,
+reboots. Read-only queries need no confirmation.
+
+Full detail: `AGENTS.md` and `skills/opnsense/references/` (start with
+`pitfalls.md`).

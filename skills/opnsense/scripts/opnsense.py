@@ -57,6 +57,135 @@ SPECIAL_APPLY = {
 COMMIT_COMMANDS = {"apply", "reconfigure", "reload", "restart", "start", "stop",
                    "reload_rules", "reloadRules"}
 
+# The index holds structural names only, so a search in networking vocabulary
+# finds nothing: "port forward" appears nowhere in `firewall/d_nat/add_rule`.
+# This maps how people describe the task onto the controllers that do it.
+CONCEPTS = {
+    "port forward": ["firewall/d_nat"],
+    "destination nat": ["firewall/d_nat"],
+    "dnat": ["firewall/d_nat"],
+    "publish": ["firewall/d_nat"],
+    "outbound nat": ["firewall/source_nat"],
+    "source nat": ["firewall/source_nat"],
+    "snat": ["firewall/source_nat"],
+    "masquerade": ["firewall/source_nat"],
+    "one to one": ["firewall/one_to_one"],
+    "firewall rule": ["firewall/filter"],
+    "block": ["firewall/filter", "unbound/settings"],
+    "allow": ["firewall/filter"],
+    "alias": ["firewall/alias"],
+    "geoip": ["firewall/alias"],
+    "blocklist": ["unbound/settings", "unbound/service"],
+    "dnsbl": ["unbound/settings", "unbound/service"],
+    "ad block": ["unbound/settings"],
+    "dns": ["unbound/settings", "dnsmasq/settings"],
+    "host override": ["unbound/settings"],
+    "local dns record": ["unbound/settings"],
+    "resolver": ["unbound/settings", "unbound/service"],
+    "dhcp": ["kea/dhcpv4", "dnsmasq/settings"],
+    "lease": ["kea/leases", "dnsmasq/leases"],
+    "reservation": ["kea/dhcpv4"],
+    "static mapping": ["kea/dhcpv4", "dnsmasq/settings"],
+    "vlan": ["interfaces/vlan_settings"],
+    "bridge": ["interfaces/bridge_settings"],
+    "lagg": ["interfaces/lagg_settings"],
+    "virtual ip": ["interfaces/vip_settings"],
+    "carp": ["interfaces/vip_settings", "core/hasync"],
+    "high availability": ["core/hasync", "core/hasync_status"],
+    "failover": ["core/hasync", "routing/settings"],
+    "gateway": ["routing/settings", "routes/gateway"],
+    "static route": ["routes/routes"],
+    "routing": ["routes/routes", "routing/settings"],
+    "vpn": ["wireguard/server", "ipsec/connections", "openvpn/instances"],
+    "wireguard": ["wireguard/server", "wireguard/client"],
+    "peer": ["wireguard/client"],
+    "tunnel": ["wireguard/server", "ipsec/connections"],
+    "bandwidth": ["trafficshaper/settings"],
+    "traffic shaping": ["trafficshaper/settings"],
+    "qos": ["trafficshaper/settings"],
+    "rate limit": ["trafficshaper/settings"],
+    "bufferbloat": ["trafficshaper/settings"],
+    "ids": ["ids/settings", "ids/service"],
+    "ips": ["ids/settings", "ids/service"],
+    "suricata": ["ids/settings", "ids/service"],
+    "intrusion": ["ids/settings", "ids/service"],
+    "captive portal": ["captiveportal/settings", "captiveportal/session"],
+    "guest": ["captiveportal/settings"],
+    "voucher": ["captiveportal/voucher"],
+    "user": ["auth/user", "auth/group"],
+    "api key": ["auth/user"],
+    "privilege": ["auth/priv", "auth/group"],
+    "certificate": ["trust/cert", "trust/ca"],
+    "backup": ["core/backup"],
+    "restore": ["core/backup"],
+    "rollback": ["core/backup", "core/snapshots"],
+    "snapshot": ["core/snapshots"],
+    "firmware": ["core/firmware"],
+    "update": ["core/firmware"],
+    "plugin": ["core/firmware"],
+    "reboot": ["core/system", "core/firmware"],
+    "log": ["diagnostics/firewall", "diagnostics/log"],
+    "packet capture": ["diagnostics/packet_capture"],
+    "tcpdump": ["diagnostics/packet_capture"],
+    "ping": ["diagnostics/ping"],
+    "traceroute": ["diagnostics/traceroute"],
+    "arp": ["diagnostics/interface"],
+    "state table": ["diagnostics/firewall"],
+    "cpu": ["diagnostics/system"],
+    "memory": ["diagnostics/system"],
+    "disk": ["diagnostics/system"],
+    "service status": ["core/service"],
+}
+
+
+def concept_targets(query: str):
+    """Controllers implied by networking vocabulary in the query."""
+    q = " ".join(query.lower().split())
+    targets = []
+    for phrase, ctls in CONCEPTS.items():
+        if phrase in q:
+            for c in ctls:
+                if c not in targets:
+                    targets.append(c)
+    return targets
+
+
+def search_endpoints(query: str, module: str | None = None):
+    """Shared search used by the CLI and the MCP server.
+
+    Returns (rows, mode) where mode is 'exact', 'concept' or 'partial'.
+    """
+    rows = load_index()["endpoints"]
+    pool = [r for r in rows if not module or r["mod"] == module]
+    terms = [t for t in query.lower().split() if t]
+
+    def hay(r):
+        return f"{r['mod']}/{r['ctl']}/{r['cmd']} {r['camel']} {r['p']}".lower()
+
+    exact = [r for r in pool if all(t in hay(r) for t in terms)]
+    if exact:
+        return exact, "exact"
+
+    wanted = concept_targets(query)
+    if wanted:
+        hits = [r for r in pool if f"{r['mod']}/{r['ctl']}" in wanted]
+        hits.sort(key=lambda r: (wanted.index(f"{r['mod']}/{r['ctl']}"), r["cmd"]))
+        if hits:
+            return hits, "concept"
+
+    if len(terms) > 1:
+        scored = []
+        for r in pool:
+            h = hay(r)
+            score = sum(2 if t in r["mod"].lower() else 1 for t in terms if t in h)
+            if score:
+                scored.append((-score, r["mod"], r["ctl"], r["cmd"], r))
+        scored.sort()
+        if scored:
+            return [s[4] for s in scored], "partial"
+
+    return [], "exact"
+
 
 class ApiError(RuntimeError):
     pass
@@ -271,43 +400,19 @@ def emit(payload, raw=False):
 
 
 def cmd_find(ns):
-    rows = load_index()["endpoints"]
-    terms = [t.lower() for t in ns.terms]
-    hits = []
-    for row in rows:
-        if ns.module and row["mod"] != ns.module:
-            continue
-        hay = f"{row['mod']}/{row['ctl']}/{row['cmd']} {row['camel']} {row['p']}".lower()
-        if all(t in hay for t in terms):
-            hits.append(row)
-    # No row matched every term. Fall back to any-term matches, ranked by how
-    # many hit, so a search using the wrong vocabulary still lands somewhere —
-    # WireGuard calls a peer a "client", Kea calls a lease a "reservation".
-    partial = False
-    if not hits and len(terms) > 1:
-        scored = []
-        for row in rows:
-            if ns.module and row["mod"] != ns.module:
-                continue
-            hay = f"{row['mod']}/{row['ctl']}/{row['cmd']} {row['camel']} {row['p']}".lower()
-            # A term naming the module is worth more than one matching a command
-            # anywhere, so "wireguard peer" ranks wireguard above kea's add_peer.
-            score = sum(2 if t in row["mod"].lower() else 1 for t in terms if t in hay)
-            if score:
-                scored.append((-score, row["mod"], row["ctl"], row["cmd"], row))
-        scored.sort()
-        hits = [s[4] for s in scored]
-        partial = bool(hits)
+    query = " ".join(ns.terms)
+    hits, mode = search_endpoints(query, ns.module)
 
     if ns.json:
         emit(hits)
         return 0 if hits else 1
     if not hits:
-        print("no endpoint matches %s" % " ".join(ns.terms))
+        print("no endpoint matches %s" % query)
         return 1
-    if partial:
-        print("no endpoint matches all of %s — closest by partial match:\n"
-              % " ".join(ns.terms))
+    if mode == "concept":
+        print("matched by concept — controllers that implement %r:\n" % query)
+    elif mode == "partial":
+        print("no endpoint matches all of %s — closest by partial match:\n" % query)
     for row in hits[: ns.limit]:
         alias = f"  (camel: {row['camel']})" if row["camel"] else ""
         params = f"  params: {row['p']}" if row["p"] else ""

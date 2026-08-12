@@ -135,3 +135,10 @@ Load only what the task needs.
 | [pitfalls.md](references/pitfalls.md) | Verified traps that cost real debugging time |
 
 Read [pitfalls.md](references/pitfalls.md) before any non-trivial change.
+
+## Other tools
+
+The same capability is available outside Claude Code: `AGENTS.md` at the repo
+root covers Codex CLI, Gemini CLI, OpenCode, Cursor, Zed and Aider, and
+`scripts/mcp_server.py` exposes six MCP tools for any MCP client. See
+`docs/integrations.md`.
