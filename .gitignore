@@ -1,0 +1,23 @@
+# Credentials — never commit
+.env
+*.env
+!.env.example
+*.key
+*.secret
+apikey*.txt
+
+# Configuration backups pulled from a firewall
+config-backup.xml
+config*.xml
+!skills/opnsense/scripts/data/*.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini

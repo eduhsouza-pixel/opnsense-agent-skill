@@ -1,0 +1,17 @@
+{
+  "name": "opnsense-agent-skill",
+  "description": "Agentic administration of OPNsense firewalls: REST API, configd and shell, with a validated index of every API endpoint.",
+  "version": "1.0.0",
+  "author": {
+    "name": "eduhsouza-pixel"
+  },
+  "homepage": "https://github.com/eduhsouza-pixel/opnsense-agent-skill",
+  "keywords": [
+    "opnsense",
+    "firewall",
+    "freebsd",
+    "pf",
+    "networking",
+    "api"
+  ]
+}
